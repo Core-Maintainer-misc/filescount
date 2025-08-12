@@ -8,7 +8,7 @@ on:
 
 jobs:
   lint:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - name: Format GDScript Code
         uses: quantum-defence/gdformatter@v0.1.5
