@@ -1,0 +1,20 @@
+name: Format GDScript Code
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Format GDScript Code
+        uses: quantum-defence/gdformatter@v0.1.5
+        with:
+          token: ${{ github.token }}
+          path: .
+          commit-message: "Auto format GDScript code"
+          committer: "GitHub <noreply@github.com>"
+          author: "GitHub <noreply@github.com>"
