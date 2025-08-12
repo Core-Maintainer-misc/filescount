@@ -1,62 +1,87 @@
+// Written by Andrew Poženel - 2025
+
 using Godot;
-using System;
 
 [Tool]
 public class FileCountPlugin : EditorPlugin
 {
+	private const string DockNameRes = "File Count - RES://";
+	private const string DockNameUser = "File Count - USER://";
+	private const string LabelTextRes = "File Count in RES://: 0";
+	private const string LabelTextUser = "File Count in USER://: 0";
+	private static readonly Vector2 DockSize = new Vector2(200, 100);
+	private static readonly Vector2 LabelSize = new Vector2(200, 50);
+	private static readonly Color PanelColor = new Color(0.2f, 0.2f, 0.2f, 1);
+
+	[Export]
+	public float UpdateTimerTime = 10.0f;
+
 	private Control fileCountDock;
 	private Label fileCountLabel;
 
 	private Control fileCountDock2;
 	private Label fileCountLabel2;
 
+	private Timer updateTimer;
+
 	public override void _EnterTree()
 	{
-		// Check if the first dock already exists
-		if (fileCountDock == null)
-		{
-			fileCountDock = new Control();
-			fileCountDock.Name = "File Count - RES://";
-			fileCountDock.RectSize = new Vector2(200, 100);
+		fileCountDock = CreateDock(DockNameRes, LabelTextRes);
+		fileCountDock2 = CreateDock(DockNameUser, LabelTextUser);
 
-			var panelStyle = new StyleBoxFlat();
-			panelStyle.BgColor = new Color(0.2f, 0.2f, 0.2f, 1);
-			fileCountDock.AddThemeStyleboxOverride("panel", panelStyle);
-
-			fileCountLabel = new Label();
-			fileCountLabel.Text = "File Count in RES://: 0";
-			fileCountLabel.RectSize = new Vector2(200, 50);
-			fileCountDock.AddChild(fileCountLabel);
-
-			AddControlToBottomPanel(fileCountDock, "File Count - RES://");
-		}
-
-		// Check if the second dock already exists
-		if (fileCountDock2 == null)
-		{
-			fileCountDock2 = new Control();
-			fileCountDock2.Name = "File Count - USER://";
-			fileCountDock2.RectSize = new Vector2(200, 100);
-
-			var panelStyle2 = new StyleBoxFlat();
-			panelStyle2.BgColor = new Color(0.2f, 0.2f, 0.2f, 1);
-			fileCountDock2.AddThemeStyleboxOverride("panel2", panelStyle2);
-
-			fileCountLabel2 = new Label();
-			fileCountLabel2.Text = "File Count in USER://: 0";
-			fileCountLabel2.RectSize = new Vector2(200, 50);
-			fileCountDock2.AddChild(fileCountLabel2);
-
-			AddControlToBottomPanel(fileCountDock2, "File Count - USER://");
-		}
+		updateTimer = new Timer();
+		updateTimer.WaitTime = UpdateTimerTime;
+		updateTimer.Connect("timeout", new Callable(this, nameof(OnUpdateTimerTimeout)));
+		AddChild(updateTimer);
+		updateTimer.Start();
 
 		UpdateFileCount();
 	}
 
 	public override void _ExitTree()
 	{
-		fileCountDock?.QueueFree();
-		fileCountDock2?.QueueFree();
+		if (updateTimer != null)
+		{
+			updateTimer.Stop();
+			updateTimer.QueueFree();
+			updateTimer = null;
+		}
+
+		RemoveControlFromBottomPanel(fileCountDock);
+		RemoveControlFromBottomPanel(fileCountDock2);
+		fileCountDock.QueueFree();
+		fileCountDock2.QueueFree();
+		fileCountDock = null;
+		fileCountDock2 = null;
+	}
+
+	private Control CreateDock(string name, string labelText)
+	{
+		var dock = new Control();
+		dock.Name = name;
+		dock.SetSize(DockSize);
+
+		var panelStyle = new StyleBoxFlat();
+		panelStyle.BgColor = PanelColor;
+		dock.AddThemeStyleboxOverride("panel", panelStyle);
+
+		var label = new Label();
+		label.Text = labelText;
+		label.SetSize(LabelSize);
+		dock.AddChild(label);
+
+		AddControlToBottomPanel(dock, name);
+
+		if (name == DockNameRes)
+		{
+			fileCountLabel = label;
+		}
+		else
+		{
+			fileCountLabel2 = label;
+		}
+
+		return dock;
 	}
 
 	private void UpdateFileCount()
@@ -66,70 +91,46 @@ public class FileCountPlugin : EditorPlugin
 		fileCountLabel2.Text = $"File Count in USER://: {counts[1]}";
 	}
 
-	private int[] CountFilesInProject()
+	private void OnUpdateTimerTimeout()
 	{
-		const string path = "res://";
-		const string path2 = "user://";
-		int count = 0;
-		int count2 = 0;
+		UpdateFileCount();
+	}
 
+	private int CountFilesInDirectory(string path)
+	{
 		var dir = DirAccess.Open(path);
-		var dir2 = DirAccess.Open(path2);
-
 		if (dir == null)
 		{
-			GD.Print("Error: Could not open directory 'res://'.");
-			return new int[] { count, count2 };
+			GD.PushError($"Error: Could not open directory '{path}'.");
+			return 0;
 		}
 
-		GD.Print("Successfully opened directory 'res://'.");
-
-		if (dir2 == null)
-		{
-			GD.Print("Error: Could not open user directory 'user://'.");
-			return new int[] { count, count2 };
-		}
-
-		GD.Print("Successfully opened user directory 'user://'.");
-
-		// Count files in RES://
+		var count = 0;
 		dir.ListDirBegin();
-		string fileName = dir.GetNext();
+		var fileName = dir.GetNext();
 		while (fileName != "")
 		{
-			if (!dir.CurrentIsDir())
+			if (dir.CurrentIsDir())
 			{
-				count++;
-				GD.Print($"Counting file in RES://: {fileName}");
+				if (fileName != "." && fileName != "..")
+				{
+					count += CountFilesInDirectory(path + fileName + "/");
+				}
 			}
 			else
 			{
-				GD.Print($"Skipping directory in RES://: {fileName}");
+				count += 1;
 			}
 			fileName = dir.GetNext();
 		}
 		dir.ListDirEnd();
-		GD.Print($"Total files counted in RES://: {count}");
+		return count;
+	}
 
-		// Count files in USER://
-		dir2.ListDirBegin();
-		string fileName2 = dir2.GetNext();
-		while (fileName2 != "")
-		{
-			if (!dir2.CurrentIsDir())
-			{
-				count2++;
-				GD.Print($"Counting file in USER://: {fileName2}");
-			}
-			else
-			{
-				GD.Print($"Skipping directory in USER://: {fileName2}");
-			}
-			fileName2 = dir2.GetNext();
-		}
-		dir2.ListDirEnd();
-		GD.Print($"Total files counted in USER://: {count2}");
-
-		return new int[] { count, count2 }; // Return both counts as an array
+	private int[] CountFilesInProject()
+	{
+		var resCount = CountFilesInDirectory("res://");
+		var userCount = CountFilesInDirectory("user://");
+		return new int[] { resCount, userCount };
 	}
 }
